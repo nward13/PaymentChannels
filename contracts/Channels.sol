@@ -12,9 +12,6 @@ import "./openZeppelin/SafeMath.sol";
  */
 contract Channels is Ownable, Pausable {
 
-    // TODO: Explain Ownable and Paudable contracts, and how their
-    // inheritance effects this contract
-
     // Libraries -- SafeMath used to perform math operations with integer
     // overflow checks
     using SafeMath256 for uint;
@@ -26,21 +23,6 @@ contract Channels is Ownable, Pausable {
 
     // Limit max deposit to 25 ETH
     uint public maxDeposit = 10 ** 18 * 25;
-
-    // TODO: explain issue with opening 2 channels w/ same sender and recipient in same block
-    // (the second one will revert)
-
-    
-
-
-    // TODO:
-    // Current blocks/day hovers around 6k
-    // 6588202 blocks mined as of 10/26/18
-    // 4294967295 is max value for uint32
-    // 6588202 + 6000(num_days) = 4294967295
-    // num_days = (4294967295 - 6588202) / 6000
-    // num_days = 714730 = 1958 years
-    // uint32 will overflow in the year 3976
 
     // This struct stores the data for each payment channel. uint32 and uint72
     // are used to take advantage of struct packing, lowering gas costs of
@@ -60,7 +42,6 @@ contract Channels is Ownable, Pausable {
     // channel key is keccak256(sender, recipient, openBlock). This is
     // used to prevent various types of signature replay attacks
     mapping (bytes32 => Channel) public channels;
-
 
     // ===============
     // Events:
@@ -95,7 +76,9 @@ contract Channels is Ownable, Pausable {
     /**
     * @dev Opens a payment channel between msg.sender and _recipient. 
     * msg.value becomes the channel deposit. Deposit must be > 0, but can
-    * be increased at a later time using increaseDeposit()
+    * be increased at a later time using increaseDeposit(). Note that
+    * attempting to open 2 channels with the same sender and recipient
+    * in the same block will cause the 2nd tx to revert
     * @param _recipient The address of the channel recipient 
     */
     function openChannel(address _recipient) external whenNotPaused payable {
@@ -142,6 +125,13 @@ contract Channels is Ownable, Pausable {
     }
 
 
+    /**
+    * @dev Allows the sender of a channel to increase the channel deposit.
+    * Can only be called by the sender of the channel. msg.sender is used
+    * as sender, msg.value is used as deposit increase amount
+    * @param _recipient Address of the recipient of the channel
+    * @param _openBlock Block number at which the channel was opened
+    */
     function increaseDeposit(address _recipient, uint32 _openBlock) 
         external 
         whenNotPaused
@@ -181,9 +171,22 @@ contract Channels is Ownable, Pausable {
     }
 
 
-    function closeChannel(address _sender, uint32 _openBlock, uint72 _amt, bytes _sig) external whenNotPaused {
-        // Note that this function can only be called by the recipient of the channel
-
+    /**
+    * @dev Called by the channel recipient to close a channel. Transfers
+    * signed amount to recipient, and balance to sender
+    * @param _sender Address of the sender of the channel
+    * @param _openBlock Block number at which the channel was opened
+    * @param _amt Amount transferred to recipient by the signed message
+    * @param _sig Signature from the sender to transfer _amt to recipient
+    */
+    function closeChannel(
+        address _sender, 
+        uint32 _openBlock, 
+        uint72 _amt, 
+        bytes _sig
+    ) 
+        external whenNotPaused 
+    {
         // The following check is made by the use of the key, based on the assumption
         // that keccak256 is a sufficiently collision resistant hash function.
         // The explicit require() statement is excluded as a gas optimization.
@@ -229,22 +232,29 @@ contract Channels is Ownable, Pausable {
     // Note that it is not currently possible to sign type-structured data,
     // which makes for a very dangerous UI because MetaMask requires you to
     // sign a hash and most user's wont verify that hash. EIP-712 aims to fix this
+    // Message = keccak256(key, amt)
 
-    // Same as closeChannel(), but no state changes
-    // public bc called by closeChannel(), but doubles as a check for users
-    // to confirm the validity of a recieved signature or calibrate their
-    // off-chain signature verification function
-
-    function validSig(bytes32 _key, uint72 _amt, bytes _sig) internal view returns (bool) {
-        
-        // Note: verifySignature can be called by anyone to check if a message is valid,
-        // although in most circumstances you would want to build your own method
-        // of checking off-chain, or else defeat the purpose of the payment channel
-    
-        // require(channels[_key].deposit >= _amt);
-
+    /**
+    * @dev Accepts a signature and the elements of the signed message, 
+    * returns a bool representing the validity of the message
+    * @param _key Unique key of the channel. Used to rebuild the signed
+    * message and identify the expected public address of the signer
+    * @param _amt Amount transferred to recipient by the signed message. 
+    * Note that this function does not check that _amt <= channel deposit.
+    * @param _sig The signature to validate
+    * @return True if the signer of the message matches the sender of the
+    * channel, false otherwise
+    */
+    function validSig(bytes32 _key, uint72 _amt, bytes _sig) 
+        internal 
+        view 
+        returns (bool) 
+    {
+        // Build and prefix the message
         bytes32 message = prefix(keccak256(abi.encodePacked(_key, _amt)));
 
+        // Recover the public key that signed the message, return true
+        // if it matches the sender of the channel, false otherwise
         if (recover(message, _sig) == channels[_key].sender) {
             return true;
         } else {
@@ -252,23 +262,33 @@ contract Channels is Ownable, Pausable {
         }
     } 
 
-    function verifySignature(address _sender, address _recipient, uint32 _openBlock, uint72 _amt, bytes _sig) public view returns (bool) {
-        
-        // Note: verifySignature can be called by anyone to check if a message is valid,
-        // although in most circumstances you would want to build your own method
-        // of checking off-chain, or else defeat the purpose of the payment channel
-    
-        // require(channels[_key].deposit >= _amt);
 
+    /**
+    * @dev Public function to verify whether a given signature can be used
+    * to close a channel.
+    * @param _sender Address of the sender of the channel
+    * @param _recipient Address of the recipient of the channel
+    * @param _openBlock Block number at which the channel was opened
+    * @param _amt Amount transferred to recipient by the signed message
+    * @param _sig The signature to verify
+    * @return True if sig can be used to close the channel, false otherwise */
+    function verifySignature(
+        address _sender, 
+        address _recipient, 
+        uint32 _openBlock, 
+        uint72 _amt, 
+        bytes _sig
+    ) 
+        external view returns (bool) 
+    {
         bytes32 key = getKey(_sender, _recipient, _openBlock); 
 
-        // uint _deposit = channels[key].deposit;
-
-        // Revert if requested transfer amount exceeds the channel deposit
-        // require(_deposit >= _amt, "_amt exceeds channel deposit.");
-
+        // Build and prefix the message
         bytes32 message = prefix(keccak256(abi.encodePacked(key, _amt)));
 
+        // Recover the public key that signed the message. Return true
+        // if it matches the sender of the channel and the channel deposit
+        // is large enough to cover the transfer amount, false otherwise
         if (recover(message, _sig) == channels[key].sender && channels[key].deposit >= _amt) {
             return true;
         } else {
@@ -296,10 +316,14 @@ contract Channels is Ownable, Pausable {
     * @param _hash The message that was signed. **NOTE: message hash must 
     * be 'prefixed' with the string "\x19Ethereum Signed Message:\n32"
     * (see prefix() function)
-    * @param _sig The signature 
+    * @param _sig Signature from which to recover the signer
     * @return The address of the signer
     */
-    function recover(bytes32 _hash, bytes _sig) internal pure returns (address) {
+    function recover(bytes32 _hash, bytes _sig) 
+        internal 
+        pure 
+        returns (address) 
+    {
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -322,6 +346,7 @@ contract Channels is Ownable, Pausable {
 
         require(v == 27 || v == 28, "Invalid signature version.");
 
+        // Return the address of the message signer
         return ecrecover(_hash, v, r, s);
     }
 
@@ -330,15 +355,17 @@ contract Channels is Ownable, Pausable {
 
     /**
     * @dev Returns the unique channel key used in the channels mapping
-    * @param _sender Address that is sending the channel payout
-    * @param _recipient Address that is receiving the channel payout
-    * @param _openBlock The block number at which the channel was created
+    * @param _sender Address of the sender of the channel
+    * @param _recipient Address of the recipient of the channel
+    * @param _openBlock Block number at which the channel was opened
     * @return The unique channel key
     */
-    function getKey(address _sender, address _recipient, uint32 _openBlock) 
-        public 
-        pure 
-        returns (bytes32) 
+    function getKey(
+        address _sender, 
+        address _recipient, 
+        uint32 _openBlock
+    ) 
+        public pure returns (bytes32) 
     {
         // Note that openBlock is hashed as a uint32
         return keccak256(abi.encodePacked(_sender, _recipient, _openBlock));
@@ -347,14 +374,24 @@ contract Channels is Ownable, Pausable {
 
 
     // can already call channels(key) to get entire channel struct
+
+    /**
+    * @dev Returns the channel deposit (in Wei). Note that there is
+    * an auto-generated channels(key) function that will return all of 
+    * the channel info
+    * @param _sender Address of the sender of the channel
+    * @param _recipient Address of the recipient of the channel
+    * @param _openBlock Block number at which the channel was opened
+    * @return Channel deposit
+    */
     function getChannelDeposit(
         address _sender, 
         address _recipient, 
         uint32 _openBlock
-    ) public view returns(uint72) {
-
+    ) 
+        public view returns(uint72) 
+    {
         bytes32 key = getKey(_sender, _recipient, _openBlock);
-
         return channels[key].deposit;
     }
  
@@ -364,6 +401,9 @@ contract Channels is Ownable, Pausable {
     // ===============
     // Owner Functions:
     // ===============
+
+    // TODO: Explain Ownable and Pausable contracts, and how their
+    // inheritance effects this contract
 
     /**
     * @dev Allows the contract owner to change the maximum deposit amount
