@@ -344,29 +344,20 @@ contract Channels is Ownable, Pausable {
         return keccak256(abi.encodePacked(_sender, _recipient, _openBlock));
     }
 
+
+
     // can already call channels(key) to get entire channel struct
     function getChannelDeposit(
         address _sender, 
         address _recipient, 
         uint32 _openBlock
     ) public view returns(uint72) {
-        
+
         bytes32 key = getKey(_sender, _recipient, _openBlock);
 
         return channels[key].deposit;
     }
-
-
-        struct Channel {
-        address sender;
-        address recipient;
-        // The block number in which the channel was opened. At current 
-        // mining rate of ~6000 blocks/day, uint32 will overflow in the 
-        // year 3976
-        uint32 openBlock;   
-        // Sender deposit. Using uint72 limits max possible deposit to ~4722 ETH
-        uint72 deposit; 
-    }
+ 
 
 
 
