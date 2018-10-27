@@ -29,7 +29,7 @@ contract GasTesterChannels is Ownable, Pausable {
     // ===============
 
     // Limit max deposit to 25 ETH
-    uint public MAX_DEPOSIT = 10 ** 18 * 25;
+    uint public maxDeposit = 10 ** 18 * 25;
 
     
 
@@ -116,7 +116,7 @@ contract GasTesterChannels is Ownable, Pausable {
         // future uses
         require(msg.value > 0, "Deposit must be greater than zero.");
         // Revert if deposit is greater than the max deposit
-        require(msg.value <= MAX_DEPOSIT, "Deposit cannot be greater than MAX_DEPOSIT.");
+        require(msg.value <= maxDeposit, "Deposit cannot be greater than maxDeposit.");
         // Revert if recipient is 0 address
         require(_recipient != address(0), "Recipient cannot be 0x address.");
         // Revert if recipient is also sender
@@ -126,7 +126,7 @@ contract GasTesterChannels is Ownable, Pausable {
         uint72 _deposit = uint72(msg.value);
 
         // Revert if deposit amount overflowed (statement should always be 
-        // true if MAX_DEPOSIT is set correctly, so use assert() for check)
+        // true if maxDeposit is set correctly, so use assert() for check)
         assert(uint(_deposit) == msg.value);
 
         // set openBlock to current block number
@@ -185,8 +185,8 @@ contract GasTesterChannels is Ownable, Pausable {
         // Increase the deposit
         _deposit = _deposit.add(depositIncrease);
 
-        // Revert if MAX_DEPOSIT is exceeded
-        require(_deposit <= MAX_DEPOSIT, "Total deposit cannot excede MAX_DEPOSIT.");
+        // Revert if maxDeposit is exceeded
+        require(_deposit <= maxDeposit, "Total deposit cannot excede maxDeposit.");
 
         channels[key].deposit = _deposit;
 
@@ -362,7 +362,7 @@ contract GasTesterChannels is Ownable, Pausable {
         require(_newMaxDeposit <= uint(uint72(-1)), "Max deposit must be less than the max storage value for the deposit data type.");
 
         // Change the max deposit
-        MAX_DEPOSIT = _newMaxDeposit;
+        maxDeposit = _newMaxDeposit;
 
         emit MaxDepositChanged(_newMaxDeposit);
     }

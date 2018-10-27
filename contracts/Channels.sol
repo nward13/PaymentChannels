@@ -12,7 +12,7 @@ import "./openZeppelin/SafeMath.sol";
  */
 contract Channels is Ownable, Pausable {
 
-    // TODO: Review and explain Ownable and Paudable contracts, and how their
+    // TODO: Explain Ownable and Paudable contracts, and how their
     // inheritance effects this contract
 
     // Libraries -- SafeMath used to perform math operations with integer
@@ -25,21 +25,15 @@ contract Channels is Ownable, Pausable {
     // ===============
 
     // Limit max deposit to 25 ETH
-    uint public MAX_DEPOSIT = 10 ** 18 * 25;
-
-    
-
-    // TODO: Add a lookup mapping? address => address => bytes32 id
-    // This makes a lookup possible but limits users to one channel between them
-    // Could also use address => address => bytes32[5]
+    uint public maxDeposit = 10 ** 18 * 25;
 
     // TODO: explain issue with opening 2 channels w/ same sender and recipient in same block
     // (the second one will revert)
 
-    // TODO: add getChannel() and getChannelByKey() functions
+    
 
 
-    // TODO: remove
+    // TODO:
     // Current blocks/day hovers around 6k
     // 6588202 blocks mined as of 10/26/18
     // 4294967295 is max value for uint32
@@ -49,8 +43,8 @@ contract Channels is Ownable, Pausable {
     // uint32 will overflow in the year 3976
 
     // This struct stores the data for each payment channel. uint32 and uint72
-    // are used to take advantage of struct packing, loweing gas costs of
-    // payment channels$0.00037
+    // are used to take advantage of struct packing, lowering gas costs of
+    // payment channels
     struct Channel {
         address sender;
         address recipient;
@@ -112,7 +106,7 @@ contract Channels is Ownable, Pausable {
         // future uses
         require(msg.value > 0, "Deposit must be greater than zero.");
         // Revert if deposit is greater than the max deposit
-        require(msg.value <= MAX_DEPOSIT, "Deposit cannot be greater than MAX_DEPOSIT.");
+        require(msg.value <= maxDeposit, "Deposit cannot be greater than maxDeposit.");
         // Revert if recipient is 0 address
         require(_recipient != address(0), "Recipient cannot be 0x address.");
         // Revert if recipient is also sender
@@ -122,7 +116,7 @@ contract Channels is Ownable, Pausable {
         uint72 _deposit = uint72(msg.value);
 
         // Revert if deposit amount overflowed (statement should always be 
-        // true if MAX_DEPOSIT is set correctly, so use assert() for check)
+        // true if maxDeposit is set correctly, so use assert() for check)
         assert(uint(_deposit) == msg.value);
 
         // set openBlock to current block number
@@ -153,9 +147,6 @@ contract Channels is Ownable, Pausable {
         whenNotPaused
         payable 
     {
-
-        // TODO: gas optimization: store channel in memory instead of reading from state data repeatedly
-
         // Revert if deposit increase amount is zero
         require(msg.value > 0, "Must provide payment to increase deposit.");
 
@@ -179,14 +170,14 @@ contract Channels is Ownable, Pausable {
         // require(msg.sender == channels[key].sender);
         
         // Increase the deposit
-        _deposit = _deposit.add(depositIncrease);
+        uint72 newDeposit = _deposit.add(depositIncrease);
 
-        // Revert if MAX_DEPOSIT is exceeded
-        require(_deposit <= MAX_DEPOSIT, "Total deposit cannot excede MAX_DEPOSIT.");
+        // Revert if maxDeposit is exceeded
+        require(newDeposit <= maxDeposit, "Total deposit cannot excede maxDeposit.");
 
-        channels[key].deposit = _deposit;
+        channels[key].deposit = newDeposit;
 
-        emit ChannelDepositIncreased(msg.sender, _recipient, _openBlock, _deposit);
+        emit ChannelDepositIncreased(msg.sender, _recipient, _openBlock, newDeposit);
     }
 
 
@@ -201,27 +192,15 @@ contract Channels is Ownable, Pausable {
 
         bytes32 key = getKey(_sender, msg.sender, _openBlock); 
 
-        // Revert if requested transfer amount exceeds the channel deposit
-        require(channels[key].deposit >= _amt, "_amt exceeds channel deposit.");
-
-        // Signature verification must return true
-        require(verifySignature(key, _amt, _sig), "Invalid signature.");
-
-
-
-        
-
-        // TODO:
-        // Store copy of channel (or at least of channel deposit) in memory
-        // Delete channel
-        // transfer _amt to recipient
-        // transfer remaining balance to sender
-
-        // Channel memory channelToClose = channels[key];
-
         uint _deposit = channels[key].deposit;
 
-        // put in some require statements for remaining checks
+        // Revert if requested transfer amount exceeds the channel deposit
+        require(_deposit >= _amt, "_amt exceeds channel deposit.");
+
+        // Signature must be valid
+        require(validSig(key, _amt, _sig), "Invalid signature.");
+
+        // put in remaining checks
 
         // Delete the channel before making transfers to protect against
         // reentrancy. If transfer() fails, entire transaction will revert
@@ -238,9 +217,6 @@ contract Channels is Ownable, Pausable {
         emit ChannelClosed(_sender, msg.sender, _openBlock, _amt);
     }
 
-    // TODO: remove
-    // function closeChannelWithSplitSig() {}
-    // function verifySplitSig() {}
 
     
 
@@ -259,7 +235,7 @@ contract Channels is Ownable, Pausable {
     // to confirm the validity of a recieved signature or calibrate their
     // off-chain signature verification function
 
-    function verifySignature(bytes32 _key, uint72 _amt, bytes _sig) public view returns (bool) {
+    function validSig(bytes32 _key, uint72 _amt, bytes _sig) internal view returns (bool) {
         
         // Note: verifySignature can be called by anyone to check if a message is valid,
         // although in most circumstances you would want to build your own method
@@ -269,7 +245,31 @@ contract Channels is Ownable, Pausable {
 
         bytes32 message = prefix(keccak256(abi.encodePacked(_key, _amt)));
 
-        if (recover(message, _sig) == channels[_key].sender && channels[_key].deposit >= _amt) {
+        if (recover(message, _sig) == channels[_key].sender) {
+            return true;
+        } else {
+            return false;
+        }
+    } 
+
+    function verifySignature(address _sender, address _recipient, uint32 _openBlock, uint72 _amt, bytes _sig) public view returns (bool) {
+        
+        // Note: verifySignature can be called by anyone to check if a message is valid,
+        // although in most circumstances you would want to build your own method
+        // of checking off-chain, or else defeat the purpose of the payment channel
+    
+        // require(channels[_key].deposit >= _amt);
+
+        bytes32 key = getKey(_sender, _recipient, _openBlock); 
+
+        // uint _deposit = channels[key].deposit;
+
+        // Revert if requested transfer amount exceeds the channel deposit
+        // require(_deposit >= _amt, "_amt exceeds channel deposit.");
+
+        bytes32 message = prefix(keccak256(abi.encodePacked(key, _amt)));
+
+        if (recover(message, _sig) == channels[key].sender && channels[key].deposit >= _amt) {
             return true;
         } else {
             return false;
@@ -344,6 +344,31 @@ contract Channels is Ownable, Pausable {
         return keccak256(abi.encodePacked(_sender, _recipient, _openBlock));
     }
 
+    // can already call channels(key) to get entire channel struct
+    function getChannelDeposit(
+        address _sender, 
+        address _recipient, 
+        uint32 _openBlock
+    ) public view returns(uint72) {
+        
+        bytes32 key = getKey(_sender, _recipient, _openBlock);
+
+        return channels[key].deposit;
+    }
+
+
+        struct Channel {
+        address sender;
+        address recipient;
+        // The block number in which the channel was opened. At current 
+        // mining rate of ~6000 blocks/day, uint32 will overflow in the 
+        // year 3976
+        uint32 openBlock;   
+        // Sender deposit. Using uint72 limits max possible deposit to ~4722 ETH
+        uint72 deposit; 
+    }
+
+
 
     // ===============
     // Owner Functions:
@@ -363,7 +388,7 @@ contract Channels is Ownable, Pausable {
         require(_newMaxDeposit <= uint(uint72(-1)), "Max deposit must be less than the max storage value for the deposit data type.");
 
         // Change the max deposit
-        MAX_DEPOSIT = _newMaxDeposit;
+        maxDeposit = _newMaxDeposit;
 
         emit MaxDepositChanged(_newMaxDeposit);
     }
