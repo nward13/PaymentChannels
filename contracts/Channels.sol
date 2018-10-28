@@ -73,6 +73,7 @@ contract Channels is Ownable, Pausable {
     // State Transition Functions:
     // ===============
 
+
     /**
     * @dev Opens a payment channel between msg.sender and _recipient. 
     * msg.value becomes the channel deposit. Deposit must be > 0, but can
@@ -146,18 +147,19 @@ contract Channels is Ownable, Pausable {
 
         // Get channel key. Key is keccak256(sender, recipient, openBlock)
         bytes32 key = getKey(msg.sender, _recipient, _openBlock);
+
+        // Only the channel sender can increase the deposit. 
+        // Check is made by the use of the key, based on the assumption 
+        // that keccak256 is a sufficiently collision resistant hash 
+        // function. The explicit require() statement is excluded as a 
+        // gas optimization.
+        // require(msg.sender == channels[key].sender);
         
         // Get current channel deposit
         uint72 _deposit = channels[key].deposit;
 
         // Revert if channel has not been opened
         require(_deposit > 0, "Cannot increase deposit on a channel that has not been created.");
-        
-        // The following check is made by the use of the key, based on the assumption
-        // that keccak256 is a sufficiently collision resistant hash function.
-        // The explicit require() statement is excluded as a gas optimization.
-        // Only the channel sender can increase the deposit. 
-        // require(msg.sender == channels[key].sender);
         
         // Increase the deposit
         uint72 newDeposit = _deposit.add(depositIncrease);
@@ -187,10 +189,11 @@ contract Channels is Ownable, Pausable {
     ) 
         external whenNotPaused 
     {
-        // The following check is made by the use of the key, based on the assumption
-        // that keccak256 is a sufficiently collision resistant hash function.
-        // The explicit require() statement is excluded as a gas optimization.
         // Only the channel recipient can close the channel
+        // Check is made by the use of the key, based on the assumption 
+        // that keccak256 is a sufficiently collision resistant hash 
+        // function. The explicit require() statement is excluded as a 
+        // gas optimization.
         // require(msg.sender == channels[key].recipient);
 
         bytes32 key = getKey(_sender, msg.sender, _openBlock); 
@@ -221,22 +224,19 @@ contract Channels is Ownable, Pausable {
     }
 
 
-    
-
     // ===============
     // Constant Functions:
     // ===============
 
 
-    // TODO: Clearly document what the expected message to sign is
-    // Note that it is not currently possible to sign type-structured data,
-    // which makes for a very dangerous UI because MetaMask requires you to
-    // sign a hash and most user's wont verify that hash. EIP-712 aims to fix this
-    // Message = keccak256(key, amt)
-
     /**
     * @dev Accepts a signature and the elements of the signed message, 
-    * returns a bool representing the validity of the message
+    * returns a bool representing the validity of the message. Signature
+    * should be keccak256(channel_key, amt_to_pay_recipient). Note that
+    * it is not currently possible to sign type-structured data, so
+    * MetaMask requires you to sign a hash and most users won't verify
+    * this hash. EIP-712 aims to fix this, so it may be possible to make
+    * the expected message much more user friendly in the near future
     * @param _key Unique key of the channel. Used to rebuild the signed
     * message and identify the expected public address of the signer
     * @param _amt Amount transferred to recipient by the signed message. 
@@ -265,7 +265,8 @@ contract Channels is Ownable, Pausable {
 
     /**
     * @dev Public function to verify whether a given signature can be used
-    * to close a channel.
+    * to close a channel. Signature should be 
+    * keccak256(channel_key, amt_to_pay_recipient)
     * @param _sender Address of the sender of the channel
     * @param _recipient Address of the recipient of the channel
     * @param _openBlock Block number at which the channel was opened
@@ -310,9 +311,13 @@ contract Channels is Ownable, Pausable {
         return keccak256(abi.encodePacked(header, _hash));
     }
 
+
     /**
     * @dev Returns the public key of the signer given a message hash and an 
-    * elliptic curve signature (the entire signature)
+    * elliptic curve signature (the entire signature). Splitting signature
+    * on-chain costs 544 gas (~$0.00037 USD at current gas prices) more
+    * than accepting r, s, and v as function parameters, but significantly
+    * simplifies things for users
     * @param _hash The message that was signed. **NOTE: message hash must 
     * be 'prefixed' with the string "\x19Ethereum Signed Message:\n32"
     * (see prefix() function)
@@ -328,29 +333,42 @@ contract Channels is Ownable, Pausable {
         bytes32 s;
         uint8 v;
 
+        // Confirm that sig length matches expected format (concatenation 
+        // of r, s, and v)
         require(_sig.length == 65, "Invalid signature length.");
 
-        // 544 gas extra to split sig on-chain vs. accepting v, s, and r as
-        // function parameters. ~$0.00037 at current gas prices.
-        // Significantly simpler API for users justifies extra gas costs
+        // Use inline assembly to split signature into r, s, and v
+        // solium-disable-next-line security/no-inline-assembly
         assembly {
+            // r is first 32 bytes of signature. 'bytes' data type is a 
+            // dynamically sized array, which are stored in memory with 
+            // a 32-byte prefix before the actual data, so we want to 
+            // start reading after this prefix. This line reads 32 bytes
+            // from memory, starting 32 bytes after the _sig memory pointer
             r := mload(add(_sig, 32))
+            // s is next 32 bytes of signature. This line reads 32 bytes
+            // from memory starting 64 bytes after the _sig memory pointer
             s := mload(add(_sig, 64))
+            // v is the last byte of the signature. This line reads 32 
+            // bytes from memory starting 96 bytes after the _sig memory 
+            // pointer, then assigns the 0th byte from this result to v. 
+            // We are reading past the end of the _sig bytes array in 
+            // memory, but mload will pad with zeros when we overread
+            // and we then take only the first byte from the read result.
             v := byte(0, mload(add(_sig, 96)))
         }
 
-        // ecrecover expects version to be 27 or 28, but could also be 0 or 1
+        // ecrecover expects recovery byte, v in range [27, 28], 
+        // but could also be in range [0, 1]
         if (v < 27) {
             v += 27;
         }
 
-        require(v == 27 || v == 28, "Invalid signature version.");
+        require(v == 27 || v == 28, "Invalid signature recovery byte, v.");
 
         // Return the address of the message signer
         return ecrecover(_hash, v, r, s);
     }
-
-
 
 
     /**
@@ -372,12 +390,9 @@ contract Channels is Ownable, Pausable {
     }
 
 
-
-    // can already call channels(key) to get entire channel struct
-
     /**
     * @dev Returns the channel deposit (in Wei). Note that there is
-    * an auto-generated channels(key) function that will return all of 
+    * an auto-generated function, channels(key), that will return all of 
     * the channel info
     * @param _sender Address of the sender of the channel
     * @param _recipient Address of the recipient of the channel
