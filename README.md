@@ -1,4 +1,4 @@
-An Ethereum smart contract implementing un-directional payment channels.  
+An Ethereum smart contract implementing uni-directional payment channels.  
   
 ## Usage  
   
