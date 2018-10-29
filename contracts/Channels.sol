@@ -17,6 +17,7 @@ contract Channels is Ownable, Pausable {
     using SafeMath256 for uint;
     using SafeMath72 for uint72;
 
+
     // ===============
     // State Variables:
     // ===============
@@ -42,6 +43,7 @@ contract Channels is Ownable, Pausable {
     // channel key is keccak256(sender, recipient, openBlock). This is
     // used to prevent various types of signature replay attacks
     mapping (bytes32 => Channel) public channels;
+
 
     // ===============
     // Events:
@@ -79,11 +81,10 @@ contract Channels is Ownable, Pausable {
     * msg.value becomes the channel deposit. Deposit must be > 0, but can
     * be increased at a later time using increaseDeposit(). Note that
     * attempting to open 2 channels with the same sender and recipient
-    * in the same block will cause the 2nd tx to revert
+    * in the same block will cause the 2nd tx to revert.
     * @param _recipient The address of the channel recipient 
     */
     function openChannel(address _recipient) external whenNotPaused payable {
-
         // Revert if no deposit is staked. NOTE: It's not currently possible
         // to access revert strings in web3 or the latest stable version 
         // of truffle, but they are included throughout the contract for 
@@ -150,7 +151,7 @@ contract Channels is Ownable, Pausable {
 
         // Only the channel sender can increase the deposit. 
         // Check is made by the use of the key, based on the assumption 
-        // that keccak256 is a sufficiently collision resistant hash 
+        // that sha3 is a sufficiently collision resistant hash 
         // function. The explicit require() statement is excluded as a 
         // gas optimization.
         // require(msg.sender == channels[key].sender);
@@ -206,11 +207,9 @@ contract Channels is Ownable, Pausable {
         // Signature must be valid
         require(validSig(key, _amt, _sig), "Invalid signature.");
 
-        // put in remaining checks
-
-        // Delete the channel before making transfers to protect against
-        // reentrancy. If transfer() fails, entire transaction will revert
-        // and the channel information will not be deleted
+        // Delete the channel before making transfers to get gas refund
+        // and protect against reentrancy. If transfer() fails, entire 
+        // tx will revert and the channel information will not be deleted
         delete channels[key];
 
         msg.sender.transfer(_amt);
@@ -299,13 +298,13 @@ contract Channels is Ownable, Pausable {
 
 
     /**
-    * @dev Prefixes a given message hash with the header required by the
-    * ecrecover() function
+    * @dev Prefixes a given message hash to match the header used by geth's
+    * eth_sign. This is used to make signatures recognizable as Ethereum
+    * specific, preventing malicious dapps from misusing signatures
     * @param _hash The message that was signed
     * @return The hash of the 'header' and the original message (this is
     * the value expected by ecrecover())
     */
-    // TODO: explain reasoning behind prefixing message
     function prefix(bytes32 _hash) internal pure returns (bytes32) {
         bytes memory header = "\x19Ethereum Signed Message:\n32";
         return keccak256(abi.encodePacked(header, _hash));
@@ -315,7 +314,7 @@ contract Channels is Ownable, Pausable {
     /**
     * @dev Returns the public key of the signer given a message hash and an 
     * elliptic curve signature (the entire signature). Splitting signature
-    * on-chain costs 544 gas (~$0.00037 USD at current gas prices) more
+    * on-chain costs 544 gas (~$0.00053 USD at 5 Gwei gas price) more
     * than accepting r, s, and v as function parameters, but significantly
     * simplifies things for users
     * @param _hash The message that was signed. **NOTE: message hash must 
@@ -334,7 +333,7 @@ contract Channels is Ownable, Pausable {
         uint8 v;
 
         // Confirm that sig length matches expected format (concatenation 
-        // of r, s, and v)
+        // of r, s, and v, 65 bytes total)
         require(_sig.length == 65, "Invalid signature length.");
 
         // Use inline assembly to split signature into r, s, and v
@@ -411,14 +410,10 @@ contract Channels is Ownable, Pausable {
     }
  
 
-
-
     // ===============
     // Owner Functions:
     // ===============
 
-    // TODO: Explain Ownable and Pausable contracts, and how their
-    // inheritance effects this contract
 
     /**
     * @dev Allows the contract owner to change the maximum deposit amount
@@ -429,9 +424,10 @@ contract Channels is Ownable, Pausable {
     function changeMaxDeposit(uint _newMaxDeposit) public onlyOwner {
         require(_newMaxDeposit > 0, "Cannot set max deposit to zero.");
 
-        // Max deposit must remain <= the max storage value for uint72 
-        // to prevent integer overflow in Channel struct
-        require(_newMaxDeposit <= uint(uint72(-1)), "Max deposit must be less than the max storage value for the deposit data type.");
+        // Max deposit must remain < the max storage value for uint72 
+        // to prevent integer overflow in Channel struct. This would be
+        // an absurdly expensive attack vector to exlpoit, but worth a check
+        require(_newMaxDeposit < uint(uint72(-1)), "Max deposit must be less than the max storage value for the deposit data type.");
 
         // Change the max deposit
         maxDeposit = _newMaxDeposit;
