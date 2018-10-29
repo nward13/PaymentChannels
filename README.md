@@ -1,4 +1,4 @@
-Still in development. To view gas optimization analysis, run the following:  
+Still in development. To run tests/debug, run the following:  
 
 Make sure truffle is installed globally.  
 ```npm install -g truffle```  
