@@ -190,14 +190,11 @@ contract Channels is Ownable, Pausable {
     ) 
         external whenNotPaused 
     {
-        // Only the channel recipient can close the channel
-        // Check is made by the use of the key, based on the assumption 
-        // that keccak256 is a sufficiently collision resistant hash 
-        // function. The explicit require() statement is excluded as a 
-        // gas optimization.
-        // require(msg.sender == channels[key].recipient);
-
         bytes32 key = getKey(_sender, msg.sender, _openBlock); 
+
+        // Only the channel recipient can close the channel
+        address _recipient = channels[key].recipient;
+        require(msg.sender == _recipient, "Channel can only be closed by recipient.");
 
         uint _deposit = channels[key].deposit;
 
@@ -212,8 +209,10 @@ contract Channels is Ownable, Pausable {
         // tx will revert and the channel information will not be deleted
         delete channels[key];
 
-        msg.sender.transfer(_amt);
+        // Transfer payout to channel recipient
+        _recipient.transfer(_amt);
 
+        // If balance remains, transfer to channel sender
         if (_deposit > _amt) {
             uint senderRefund = uint((_deposit).sub(_amt));
             _sender.transfer(senderRefund);
