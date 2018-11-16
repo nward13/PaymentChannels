@@ -154,6 +154,16 @@ contract("Channels", function(accounts) {
         );
         assert.equal(sigVerification, false, "Invalid sig is verified.");
 
+        // Check that an otherwise valid sig of the wrong length fails
+        const shortSig = validSig.slice(0, -3);
+        await expectThrow(Channels.verifySignature(
+            sender, 
+            recipient,
+            openBlock,
+            transferAmt,
+            shortSig
+        ), EVMRevert);
+
         // Check that a signature from recipient fails
         const maliciousSig = web3.eth.sign(recipient, msg); 
         sigVerification = await Channels.verifySignature(
