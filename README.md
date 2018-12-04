@@ -1,4 +1,4 @@
-An Ethereum smart contract implementing uni-directional payment channels.  
+An Ethereum smart contract implementing uni-directional payment channels. Currently deployed on the Rinkeby test network at <a href="https://rinkeby.etherscan.io/address/0x8994743c6631f2b4bfc9a97e17fb39a28b0502e1#code">0x8994743c6631F2b4bfC9a97e17fb39A28b0502e1</a>
   
 ## Usage  
   
