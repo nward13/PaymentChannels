@@ -1,4 +1,6 @@
-An Ethereum smart contract implementing uni-directional payment channels. Currently deployed on the Rinkeby test network at <a href="https://rinkeby.etherscan.io/address/0x8994743c6631f2b4bfc9a97e17fb39a28b0502e1#code">0x8994743c6631F2b4bfC9a97e17fb39A28b0502e1</a>. The contract can be used via a module running on the Saito blockchain that passes payment messages back and forth between Saito users (https://github.com/nward13/EthChannelsSaitoModule).
+An Ethereum smart contract implementing uni-directional payment channels. Currently deployed on the Rinkeby test network at <a href="https://rinkeby.etherscan.io/address/0x8994743c6631f2b4bfc9a97e17fb39a28b0502e1#code">0x8994743c6631F2b4bfC9a97e17fb39A28b0502e1</a>. The contract can be used via a module running on the Saito blockchain that passes payment messages back and forth between Saito users (https://github.com/nward13/EthChannelsSaitoModule).  
+  
+For more on payment channels see this <a href="https://blog.altcoin.io/payment-channels-explained-what-they-are-why-theyre-important-82d5046f073c">Medium post</a>.
   
 ## Usage  
   
